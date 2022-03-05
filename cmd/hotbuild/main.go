@@ -1,12 +1,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -23,16 +21,6 @@ var (
 	args       []string
 	cmd        *exec.Cmd
 )
-
-func cancelOnTermination(cancel context.CancelFunc) {
-	log.Println("setting up a signal handler")
-	s := make(chan os.Signal, 1)
-	signal.Notify(s, syscall.SIGTERM)
-	go func() {
-		log.Printf("received SIGTERM %v\n", <-s)
-		cancel()
-	}()
-}
 
 func event(observer *notify.ObserverNotify) {
 	path := observer.CurrentEvent.Name
