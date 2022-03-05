@@ -1,10 +1,12 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,18 +16,19 @@ import (
 )
 
 var (
-	dir        string
+	dir        *string
 	extensions []string
 	m          = sync.Mutex{}
 	command    string
 	args       []string
-	cmd        *exec.Cmd
+
+	terminateCommand string
+	terminateArgs    []string
+	cmd              *exec.Cmd
 )
 
 func event(observer *notify.ObserverNotify) {
 	path := observer.CurrentEvent.Name
-	log.Println(observer.CurrentEvent.String())
-	log.Println(path)
 
 	file, err := os.Open(path)
 	if err != nil {
@@ -52,6 +55,7 @@ func event(observer *notify.ObserverNotify) {
 func runCommand() {
 	m.Lock()
 	defer m.Unlock()
+	log.Println("runCommand")
 
 	if cmd != nil {
 		if cmd.Process != nil {
@@ -85,13 +89,46 @@ func runCommand() {
 }
 
 func main() {
-	c := make(chan bool)
-	dir = "."
-	command = "go"
-	args = []string{"run", dir}
-	extensions = []string{"go"}
 
-	files, err := FilePathWalkDir(dir)
+	defer func() {
+		if terminateCommand != "" {
+			tcmd := exec.Command(terminateCommand, terminateArgs...)
+			tcmd.Run()
+			log.Println("hotbuild>", "terminateCommand >", terminateCommand, terminateArgs)
+		}
+	}()
+
+	done := make(chan struct{})
+
+	go func() {
+		log.Println("Listening signals...")
+		c := make(chan os.Signal, 1) // we need to reserve to buffer size 1, so the notifier are not blocked
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+		<-c
+		close(done)
+	}()
+
+	dir = flag.String("dir", ".", "default .")
+	extensionsParam := flag.String("ext", "go", "default go")
+	commandParam := flag.String("cmd", "go run .", "default \"go run .\"")
+	terminateCommandParam := flag.String("end", "", "example \"killall hello\"")
+	flag.Parse()
+
+	commandArray := strings.Split(*commandParam, " ")
+	terminateCommandArray := strings.Split(*terminateCommandParam, " ")
+	command = commandArray[0]
+	args = []string{}
+	if len(commandArray) > 1 {
+		args = commandArray[1:]
+	}
+	terminateCommand = terminateCommandArray[0]
+	terminateArgs = []string{}
+	if len(terminateCommandArray) > 1 {
+		terminateArgs = terminateCommandArray[1:]
+	}
+	extensions = strings.Split(*extensionsParam, ",")
+
+	files, err := FilePathWalkDir(*dir)
 	if err != nil {
 		panic(err)
 	}
@@ -102,7 +139,7 @@ func main() {
 	}
 	runCommand()
 
-	<-c
+	<-done
 }
 
 func FilePathWalkDir(root string) ([]string, error) {
