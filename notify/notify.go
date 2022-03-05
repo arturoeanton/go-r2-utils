@@ -41,6 +41,15 @@ func (o *ObserverNotify) FxChmod(fxChmod func(observer *ObserverNotify)) *Observ
 	return o
 }
 
+func (o *ObserverNotify) FxAll(fx func(observer *ObserverNotify)) *ObserverNotify {
+	o.fxChmod = fx
+	o.fxCreate = fx
+	o.fxRemove = fx
+	o.fxRename = fx
+	o.fxWrite = fx
+	return o
+}
+
 func NewNotify(directory string, filename string) *ObserverNotify {
 	observer := &ObserverNotify{
 		Filename:  filename,
