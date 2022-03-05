@@ -1,0 +1,10 @@
+name: hello
+directory: .
+commands:
+  command: go run .
+  terminate: killall hello
+extensions:
+  - go
+  - html
+log: true
+version: true

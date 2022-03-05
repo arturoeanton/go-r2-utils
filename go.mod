@@ -6,6 +6,7 @@ require (
 	github.com/dop251/goja v0.0.0-20220214123719-b09a6bfa842f
 	github.com/fsnotify/fsnotify v1.5.1
 	github.com/google/uuid v1.3.0
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (

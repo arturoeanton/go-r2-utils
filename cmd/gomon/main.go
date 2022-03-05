@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -12,6 +13,10 @@ import (
 	"sync"
 	"syscall"
 
+	"gopkg.in/yaml.v2"
+
+	"github.com/arturoeanton/go-r2-utils/commons"
+	"github.com/arturoeanton/go-r2-utils/dv"
 	"github.com/arturoeanton/go-r2-utils/notify"
 )
 
@@ -28,6 +33,18 @@ var (
 	terminateArgs    []string
 	cmd              *exec.Cmd
 )
+
+type GoMonConfig struct {
+	Name      string `yaml:"name" dv:""`
+	Directory string `yaml:"directory" dv:"."`
+	Commands  struct {
+		Command   string `yaml:"command" dv:"go run ."`
+		Terminate string `yaml:"terminate" dv:"`
+	} `yaml:"commands"`
+	Extensions []string `yaml:"extensions" dv:"go,html,js"`
+	Log        bool     `yaml:"log" dv:"false"`
+	Version    bool     `yaml:"version" dv:"false"`
+}
 
 func event(observer *notify.ObserverNotify) {
 	path := observer.CurrentEvent.Name
@@ -141,15 +158,53 @@ func FilePathWalkDir(root string) ([]string, error) {
 
 func main() {
 
+	configFile := flag.String("config", "gomon.yaml", "Config file")
 	dir = flag.String("dir", ".", "default .")
 	flagLog = flag.Bool("log", false, "print log")
 	ov := flag.Bool("ov", false, "only version")
 	v := flag.Bool("v", false, "print version")
-	nameParam := flag.String("name", "", "Example example1")
-	extensionsParam := flag.String("ext", "go", "default go")
-	commandParam := flag.String("cmd", "go run .", "default \"go run .\"")
-	terminateCommandParam := flag.String("end", "", "example \"killall hello\"")
 	flag.Parse()
+
+	var config GoMonConfig
+	err := dv.Fill(&config)
+	if err != nil {
+		log.Printf("Fill err   #%v ", err)
+		return
+	}
+	if commons.Exists(*configFile) {
+		yamlFile, err := ioutil.ReadFile(*configFile)
+		if err != nil {
+			log.Printf("yamlFile.Get err   #%v ", err)
+			return
+		}
+
+		err = yaml.Unmarshal(yamlFile, &config)
+		if err != nil {
+			log.Fatalf("Unmarshal: %v", err)
+			return
+		}
+		if config.Version {
+			*v = true
+		}
+		if config.Log {
+			*flagLog = true
+		}
+	}
+	name = config.Name
+	extensions = config.Extensions
+	dir = &(config.Directory)
+	commandArray := strings.Split(config.Commands.Command, " ")
+	command = commandArray[0]
+	args = []string{}
+	if len(commandArray) > 1 {
+		args = commandArray[1:]
+	}
+	terminateCommandArray := strings.Split(config.Commands.Terminate, " ")
+	terminateCommand = terminateCommandArray[0]
+	terminateArgs = []string{}
+	if len(terminateCommandArray) > 1 {
+		terminateArgs = terminateCommandArray[1:]
+	}
 
 	if *ov {
 		fmt.Println("hotbuild> 1.0.0")
@@ -188,25 +243,6 @@ func main() {
 		<-c
 		close(done)
 	}()
-
-	name = *nameParam
-	if *nameParam == "" {
-		name, _ = filepath.Abs(*dir)
-	}
-
-	commandArray := strings.Split(*commandParam, " ")
-	terminateCommandArray := strings.Split(*terminateCommandParam, " ")
-	command = commandArray[0]
-	args = []string{}
-	if len(commandArray) > 1 {
-		args = commandArray[1:]
-	}
-	terminateCommand = terminateCommandArray[0]
-	terminateArgs = []string{}
-	if len(terminateCommandArray) > 1 {
-		terminateArgs = terminateCommandArray[1:]
-	}
-	extensions = strings.Split(*extensionsParam, ",")
 
 	files, err := FilePathWalkDir(*dir)
 	if err != nil {
