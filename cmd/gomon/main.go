@@ -109,8 +109,8 @@ func runCommand() {
 	}()
 }
 
-// go run ../hotbuild/. -cmd "go run ." -dir . -ext go,html,js -log
-
+// gomon -cmd "go run ." -dir . -ext go,html,js -log
+// gomon  -dir .
 func FilePathWalkDir(root string) ([]string, error) {
 	var files []string
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -141,6 +141,24 @@ func FilePathWalkDir(root string) ([]string, error) {
 
 func main() {
 
+	dir = flag.String("dir", ".", "default .")
+	flagLog = flag.Bool("log", false, "print log")
+	ov := flag.Bool("ov", false, "only version")
+	v := flag.Bool("v", false, "print version")
+	nameParam := flag.String("name", "", "Example example1")
+	extensionsParam := flag.String("ext", "go", "default go")
+	commandParam := flag.String("cmd", "go run .", "default \"go run .\"")
+	terminateCommandParam := flag.String("end", "", "example \"killall hello\"")
+	flag.Parse()
+
+	if *ov {
+		fmt.Println("hotbuild> 1.0.0")
+		return
+	}
+	if *v {
+		fmt.Println("hotbuild> 1.0.0")
+	}
+
 	defer func() {
 		if terminateCommand != "" {
 			tcmd := exec.Command(terminateCommand, terminateArgs...)
@@ -170,14 +188,6 @@ func main() {
 		<-c
 		close(done)
 	}()
-
-	dir = flag.String("dir", ".", "default .")
-	flagLog = flag.Bool("log", false, "default true")
-	nameParam := flag.String("name", "", "Example example1")
-	extensionsParam := flag.String("ext", "go", "default go")
-	commandParam := flag.String("cmd", "go run .", "default \"go run .\"")
-	terminateCommandParam := flag.String("end", "", "example \"killall hello\"")
-	flag.Parse()
 
 	name = *nameParam
 	if *nameParam == "" {
