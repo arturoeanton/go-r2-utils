@@ -20,7 +20,9 @@ var (
 	extensions []string
 	m          = sync.Mutex{}
 	command    string
+	name       string
 	args       []string
+	flagLog    *bool
 
 	terminateCommand string
 	terminateArgs    []string
@@ -55,7 +57,9 @@ func event(observer *notify.ObserverNotify) {
 func runCommand() {
 	m.Lock()
 	defer m.Unlock()
-	log.Println("runCommand")
+	if *flagLog {
+		log.Println("hotbuild>", "RunCommand")
+	}
 
 	if cmd != nil {
 		if cmd.Process != nil {
@@ -69,18 +73,35 @@ func runCommand() {
 	stdout, err := cmd.StdoutPipe()
 	cmd.Stderr = cmd.Stdout
 	if err != nil {
-		log.Fatal(err)
+		if *flagLog {
+			log.Println("hotbuild>", err)
+		}
 	}
 
 	if err := cmd.Start(); err != nil {
-		log.Println(err)
+		if *flagLog {
+			log.Println("hotbuild>", err)
+		}
 	}
 
 	go func() {
 		for {
-			tmp := make([]byte, 1024)
-			_, err := stdout.Read(tmp)
-			fmt.Print(string(tmp))
+			tmp := make([]byte, 1024*1024)
+			i, err := stdout.Read(tmp)
+			str := string(tmp)[:i]
+
+			if i == 0 {
+				continue
+			}
+
+			str = strings.TrimSuffix(str, "\n")
+
+			if *flagLog {
+				fmt.Println("build>", name, "><", len(str), ">"+str)
+			} else {
+				fmt.Println(str)
+			}
+
 			if err != nil {
 				return
 			}
@@ -88,59 +109,7 @@ func runCommand() {
 	}()
 }
 
-func main() {
-
-	defer func() {
-		if terminateCommand != "" {
-			tcmd := exec.Command(terminateCommand, terminateArgs...)
-			tcmd.Run()
-			log.Println("hotbuild>", "terminateCommand >", terminateCommand, terminateArgs)
-		}
-	}()
-
-	done := make(chan struct{})
-
-	go func() {
-		log.Println("Listening signals...")
-		c := make(chan os.Signal, 1) // we need to reserve to buffer size 1, so the notifier are not blocked
-		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-		<-c
-		close(done)
-	}()
-
-	dir = flag.String("dir", ".", "default .")
-	extensionsParam := flag.String("ext", "go", "default go")
-	commandParam := flag.String("cmd", "go run .", "default \"go run .\"")
-	terminateCommandParam := flag.String("end", "", "example \"killall hello\"")
-	flag.Parse()
-
-	commandArray := strings.Split(*commandParam, " ")
-	terminateCommandArray := strings.Split(*terminateCommandParam, " ")
-	command = commandArray[0]
-	args = []string{}
-	if len(commandArray) > 1 {
-		args = commandArray[1:]
-	}
-	terminateCommand = terminateCommandArray[0]
-	terminateArgs = []string{}
-	if len(terminateCommandArray) > 1 {
-		terminateArgs = terminateCommandArray[1:]
-	}
-	extensions = strings.Split(*extensionsParam, ",")
-
-	files, err := FilePathWalkDir(*dir)
-	if err != nil {
-		panic(err)
-	}
-
-	for _, currentDir := range files {
-		log.Println("Watch on", currentDir)
-		notify.NewNotify(currentDir, "*").FxAll(event).Run()
-	}
-	runCommand()
-
-	<-done
-}
+// go run ../hotbuild/. -cmd "go run ." -dir . -ext go,html,js -log
 
 func FilePathWalkDir(root string) ([]string, error) {
 	var files []string
@@ -168,4 +137,81 @@ func FilePathWalkDir(root string) ([]string, error) {
 	}
 
 	return setFiles, err
+}
+
+func main() {
+
+	defer func() {
+		if terminateCommand != "" {
+			tcmd := exec.Command(terminateCommand, terminateArgs...)
+			tcmd.Run()
+			if *flagLog {
+				log.Println("hotbuild>", "terminateCommand >", terminateCommand, terminateArgs)
+			}
+		}
+		if cmd != nil {
+			if cmd.Process != nil {
+				syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+				if *flagLog {
+					log.Println("hotbuild>", "kill >", cmd.Process.Pid, cmd)
+				}
+			}
+		}
+	}()
+
+	done := make(chan struct{})
+
+	go func() {
+		if *flagLog {
+			log.Println("hotbuild>", "Listening signals...")
+		}
+		c := make(chan os.Signal, 1) // we need to reserve to buffer size 1, so the notifier are not blocked
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+		<-c
+		close(done)
+	}()
+
+	dir = flag.String("dir", ".", "default .")
+	flagLog = flag.Bool("log", false, "default true")
+	nameParam := flag.String("name", "", "Example example1")
+	extensionsParam := flag.String("ext", "go", "default go")
+	commandParam := flag.String("cmd", "go run .", "default \"go run .\"")
+	terminateCommandParam := flag.String("end", "", "example \"killall hello\"")
+	flag.Parse()
+
+	name = *nameParam
+	if *nameParam == "" {
+		name, _ = filepath.Abs(*dir)
+	}
+
+	commandArray := strings.Split(*commandParam, " ")
+	terminateCommandArray := strings.Split(*terminateCommandParam, " ")
+	command = commandArray[0]
+	args = []string{}
+	if len(commandArray) > 1 {
+		args = commandArray[1:]
+	}
+	terminateCommand = terminateCommandArray[0]
+	terminateArgs = []string{}
+	if len(terminateCommandArray) > 1 {
+		terminateArgs = terminateCommandArray[1:]
+	}
+	extensions = strings.Split(*extensionsParam, ",")
+
+	files, err := FilePathWalkDir(*dir)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, currentDir := range files {
+
+		if *flagLog {
+			log.Println("hotbuild>", "Watch on", currentDir)
+		}
+
+		notify.NewNotify(currentDir, "*").FxAll(event).Run()
+	}
+	runCommand()
+
+	<-done
 }

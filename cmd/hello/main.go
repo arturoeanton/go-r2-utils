@@ -15,7 +15,7 @@ func homePage(w http.ResponseWriter, r *http.Request) {
 
 func homePage2(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, ejemplo1.Ejemplo1()+" 2")
-	fmt.Println("Endpoint Hit: homePage")
+	fmt.Println("Endpoint Hit: homePage 2")
 }
 
 func handleRequests() {
