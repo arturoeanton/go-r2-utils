@@ -209,7 +209,7 @@ func main() {
 	}
 
 	if *v {
-		fmt.Println("gomom> 1.0.0")
+		fmt.Println("gomom> v0.0.3")
 	}
 
 	defer func() {

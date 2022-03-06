@@ -5,6 +5,6 @@
 
 ### install
 ```
-go install github.com/arturoeanton/go-r2-utils/cmd/gomon@latest
+go install github.com/arturoeanton/go-r2-utils/cmd/gomon@v0.0.3
 ```
 
