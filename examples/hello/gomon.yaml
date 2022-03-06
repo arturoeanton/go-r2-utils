@@ -1,10 +1,15 @@
 name: hello
-directory: .
+include: 
+  - .
+  - ejemplo2
+exclude:
+  - txt
 commands:
   command: go run .
   terminate: killall hello
 extensions:
   - go
   - html
+  - txt
 log: true
 version: true

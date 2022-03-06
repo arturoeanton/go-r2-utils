@@ -38,3 +38,14 @@ func StringToFile(filenanme string, content string) error {
 	err := ioutil.WriteFile(filenanme, d1, 0644)
 	return err
 }
+func RemoveRepeat(s []string) []string {
+	m := make(map[string]bool)
+	for _, v := range s {
+		m[v] = true
+	}
+	set := make([]string, 0)
+	for k := range m {
+		set = append(set, k)
+	}
+	return set
+}

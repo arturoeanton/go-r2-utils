@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	dir        *string
+	config     GoMonConfig
 	extensions []string
 	m          = sync.Mutex{}
 	command    string
@@ -35,11 +35,12 @@ var (
 )
 
 type GoMonConfig struct {
-	Name      string `yaml:"name" dv:""`
-	Directory string `yaml:"directory" dv:"."`
-	Commands  struct {
+	Name     string   `yaml:"name" dv:""`
+	Include  []string `yaml:"include" dv:"."`
+	Exclude  []string `yaml:"exclude" dv:""`
+	Commands struct {
 		Command   string `yaml:"command" dv:"go run ."`
-		Terminate string `yaml:"terminate" dv:"`
+		Terminate string `yaml:"terminate" dv:""`
 	} `yaml:"commands"`
 	Extensions []string `yaml:"extensions" dv:"go,html,js"`
 	Log        bool     `yaml:"log" dv:"false"`
@@ -61,21 +62,21 @@ func event(observer *notify.ObserverNotify) {
 		return
 	}
 	if fileInfo.IsDir() {
-		notify.NewNotify(path, "*").FxAll(event).Run()
+		watchOnDir(path)
 	} else {
 		for _, ext := range extensions {
 			if strings.HasSuffix(path, "."+ext) {
-				go runCommand()
+				go runCommand(path)
 			}
 		}
 	}
 }
 
-func runCommand() {
+func runCommand(filenameOfEvent string) {
 	m.Lock()
 	defer m.Unlock()
 	if *flagLog {
-		log.Println("hotbuild>", "RunCommand")
+		log.Println("gomom>", "RunCommand", filenameOfEvent)
 	}
 
 	if cmd != nil {
@@ -91,13 +92,13 @@ func runCommand() {
 	cmd.Stderr = cmd.Stdout
 	if err != nil {
 		if *flagLog {
-			log.Println("hotbuild>", err)
+			log.Println("gomom>", err)
 		}
 	}
 
 	if err := cmd.Start(); err != nil {
 		if *flagLog {
-			log.Println("hotbuild>", err)
+			log.Println("gomom>", err)
 		}
 	}
 
@@ -114,7 +115,7 @@ func runCommand() {
 			str = strings.TrimSuffix(str, "\n")
 
 			if *flagLog {
-				fmt.Println("build>", name, "><", len(str), ">"+str)
+				log.Println(name, "[", len(str), "]>"+str)
 			} else {
 				fmt.Println(str)
 			}
@@ -126,11 +127,12 @@ func runCommand() {
 	}()
 }
 
-// gomon -cmd "go run ." -dir . -ext go,html,js -log
-// gomon  -dir .
 func FilePathWalkDir(root string) ([]string, error) {
 	var files []string
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
 		if info.IsDir() {
 			files = append(files, path)
 			if path != root {
@@ -144,28 +146,29 @@ func FilePathWalkDir(root string) ([]string, error) {
 		return nil
 	})
 
-	m := make(map[string]bool)
-	for _, file := range files {
-		m[file] = true
-	}
-	setFiles := make([]string, 0)
-	for k := range m {
-		setFiles = append(setFiles, k)
-	}
+	return commons.RemoveRepeat(files), err
+}
 
-	return setFiles, err
+func watchOnDir(currentDir string) {
+	if !commons.ContainsString(config.Exclude, currentDir) {
+		if *flagLog {
+			log.Println("gomom>", "Watch on", currentDir)
+		}
+		notify.NewNotify(currentDir, "*").FxAll(event).Run()
+	} else {
+		if *flagLog {
+			log.Println("gomom>", "Exclude", currentDir)
+		}
+	}
 }
 
 func main() {
 
 	configFile := flag.String("config", "gomon.yaml", "Config file")
-	dir = flag.String("dir", ".", "default .")
 	flagLog = flag.Bool("log", false, "print log")
-	ov := flag.Bool("ov", false, "only version")
 	v := flag.Bool("v", false, "print version")
 	flag.Parse()
 
-	var config GoMonConfig
 	err := dv.Fill(&config)
 	if err != nil {
 		log.Printf("Fill err   #%v ", err)
@@ -192,7 +195,6 @@ func main() {
 	}
 	name = config.Name
 	extensions = config.Extensions
-	dir = &(config.Directory)
 	commandArray := strings.Split(config.Commands.Command, " ")
 	command = commandArray[0]
 	args = []string{}
@@ -206,12 +208,8 @@ func main() {
 		terminateArgs = terminateCommandArray[1:]
 	}
 
-	if *ov {
-		fmt.Println("hotbuild> 1.0.0")
-		return
-	}
 	if *v {
-		fmt.Println("hotbuild> 1.0.0")
+		fmt.Println("gomom> 1.0.0")
 	}
 
 	defer func() {
@@ -219,14 +217,14 @@ func main() {
 			tcmd := exec.Command(terminateCommand, terminateArgs...)
 			tcmd.Run()
 			if *flagLog {
-				log.Println("hotbuild>", "terminateCommand >", terminateCommand, terminateArgs)
+				log.Println("gomom>", "terminateCommand >", terminateCommand, terminateArgs)
 			}
 		}
 		if cmd != nil {
 			if cmd.Process != nil {
 				syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 				if *flagLog {
-					log.Println("hotbuild>", "kill >", cmd.Process.Pid, cmd)
+					log.Println("gomom>", "kill >", cmd.Process.Pid, cmd)
 				}
 			}
 		}
@@ -236,7 +234,7 @@ func main() {
 
 	go func() {
 		if *flagLog {
-			log.Println("hotbuild>", "Listening signals...")
+			log.Println("gomom>", "Listening signals...")
 		}
 		c := make(chan os.Signal, 1) // we need to reserve to buffer size 1, so the notifier are not blocked
 		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -244,20 +242,25 @@ func main() {
 		close(done)
 	}()
 
-	files, err := FilePathWalkDir(*dir)
-	if err != nil {
-		panic(err)
-	}
-
-	for _, currentDir := range files {
-
-		if *flagLog {
-			log.Println("hotbuild>", "Watch on", currentDir)
+	config.Include = commons.RemoveRepeat(config.Include)
+	config.Exclude = commons.RemoveRepeat(config.Exclude)
+	directories := make([]string, 0)
+	for _, directory := range config.Include {
+		directoriesTmp, err := FilePathWalkDir(directory)
+		if err != nil {
+			panic(err)
 		}
-
-		notify.NewNotify(currentDir, "*").FxAll(event).Run()
+		directories = append(directories, directoriesTmp...)
 	}
-	runCommand()
+
+	directories = commons.RemoveRepeat(directories)
+
+	for _, currentDir := range directories {
+
+		watchOnDir(currentDir)
+
+	}
+	runCommand("[start]")
 
 	<-done
 }
